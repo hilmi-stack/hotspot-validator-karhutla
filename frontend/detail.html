@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Detail Hotspot & Verifikasi Petugas</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans">
+  <nav class="bg-slate-900 text-white px-6 py-4 flex justify-between items-center shadow-md">
+    <div class="flex items-center space-x-3">
+      <span class="text-2xl">🔥</span>
+      <h1 class="font-bold text-lg">Hotspot Validator — Detail Titik</h1>
+    </div>
+    <a href="index.html" class="bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded text-sm">&larr; Kembali ke Peta</a>
+  </nav>
+
+  <main class="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
+    <!-- Ringkasan Skor & Metadata -->
+    <div class="bg-white p-6 rounded-xl shadow-sm space-y-4">
+      <div class="flex flex-wrap justify-between items-start gap-4 border-b pb-4">
+        <div>
+          <span id="badge-level" class="text-xs font-bold px-3 py-1 rounded-full bg-amber-100 text-amber-800">Memuat...</span>
+          <h2 id="title-wilayah" class="text-2xl font-bold mt-2">-</h2>
+          <p id="meta-satelit" class="text-xs text-slate-500 mt-1">-</p>
+        </div>
+        <div class="text-right">
+          <p class="text-xs text-slate-500 uppercase font-semibold">Skor Probabilitas Akhir</p>
+          <p id="skor-akhir" class="text-4xl font-extrabold text-slate-900">-</p>
+          <p id="skor-rincian" class="text-xs text-slate-500 mt-1">-</p>
+        </div>
+      </div>
+
+      <!-- 3 Faktor Utama SHAP (FR-07) -->
+      <div>
+        <h3 class="font-bold text-sm text-slate-700 mb-2">🧠 3 Faktor Utama Penentu Skor (Explainable AI / SHAP)</h3>
+        <div id="shap-list" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
+      </div>
+
+      <!-- Data Cuaca & Lahan (FR-16) -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-xs">
+        <div class="bg-slate-50 p-3 rounded-lg border">
+          <p class="text-slate-400">Jenis Tutupan Lahan</p>
+          <p id="info-lahan" class="font-bold text-sm mt-0.5">-</p>
+        </div>
+        <div class="bg-slate-50 p-3 rounded-lg border">
+          <p class="text-slate-400">Curah Hujan 7 Hari</p>
+          <p id="info-hujan" class="font-bold text-sm mt-0.5">-</p>
+        </div>
+        <div class="bg-slate-50 p-3 rounded-lg border">
+          <p class="text-slate-400">Suhu & Kelembapan</p>
+          <p id="info-suhu" class="font-bold text-sm mt-0.5">-</p>
+        </div>
+        <div class="bg-slate-50 p-3 rounded-lg border">
+          <p class="text-slate-400">Jarak Permukiman</p>
+          <p id="info-jarak" class="font-bold text-sm mt-0.5">-</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bukti Laporan Foto Warga Terkait -->
+    <div class="bg-white p-6 rounded-xl shadow-sm">
+      <h3 class="font-bold text-base mb-3">📸 Laporan Foto Warga di Sekitar Titik</h3>
+      <div id="reports-container" class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-slate-500">
+        Belum ada laporan foto warga untuk titik ini.
+      </div>
+    </div>
+
+    <!-- Form Hasil Cek Lapangan Petugas (S5 / FR-23, FR-24) -->
+    <div class="bg-white p-6 rounded-xl shadow-sm border-t-4 border-slate-900">
+      <h3 class="font-bold text-base mb-1">✅ Form Hasil Pengecekan Lapangan (Umpan Balik Model)</h3>
+      <p class="text-xs text-slate-500 mb-4">Hasil verifikasi petugas otomatis masuk ke dataset pelatihan ulang model AI.</p>
+      <form onsubmit="submitCheck(event)" class="space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold mb-1">Status Kebenaran di Lapangan</label>
+            <select id="check-hasil" class="w-full border rounded-lg p-2.5 text-sm bg-slate-50" required>
+              <option value="Benar api">🔥 Benar Api / Kebakaran Nyata</option>
+              <option value="Bukan api">❌ Bukan Api (Alarm Palsu / Pantulan Atap)</option>
+              <option value="Tidak bisa dicek">⚠️ Tidak Bisa Dicek (Akses Terputus)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold mb-1">Nama / Instansi Petugas</label>
+            <input type="text" id="check-petugas" value="Tim Manggala Agni / BPBD" class="w-full border rounded-lg p-2.5 text-sm" required />
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1">Catatan Lapangan</label>
+          <textarea id="check-catatan" rows="2" placeholder="Contoh: Ditemukan pembakaran lahan gambut seluas ±1 ha..." class="w-full border rounded-lg p-2.5 text-sm"></textarea>
+        </div>
+        <button type="submit" class="bg-slate-900 hover:bg-slate-800 text-white font-semibold px-5 py-2.5 rounded-lg text-sm">
+          Simpan Hasil Verifikasi
+        </button>
+      </form>
+      <div id="history-checks" class="mt-4 space-y-2 text-xs"></div>
+    </div>
+  </main>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const hotspotId = params.get('id');
+
+    async function loadDetail() {
+      if (!hotspotId) return;
+      const res = await fetch(`/api/hotspots/${hotspotId}`);
+      const data = await res.json();
+      const hs = data.hotspot;
+
+      document.getElementById('badge-level').innerText = hs.level;
+      document.getElementById('title-wilayah').innerText = `${hs.wilayah} (#${hs.id})`;
+      document.getElementById('meta-satelit').innerText = `Satelit: ${hs.satelit} • Koordinat: ${hs.lat}, ${hs.lon} • Waktu: ${hs.waktu_akuisisi}`;
+      document.getElementById('skor-akhir').innerText = `${hs.skor_akhir}/100`;
+      document.getElementById('skor-rincian').innerText = `Skor Dasar AI: ${hs.skor_dasar} + Boost Warga: ${hs.skor_boost}`;
+
+      document.getElementById('info-lahan').innerText = hs.jenis_lahan;
+      document.getElementById('info-hujan').innerText = `${hs.curah_hujan_7h} mm`;
+      document.getElementById('info-suhu').innerText = `${hs.suhu}°C / ${hs.kelembapan}%`;
+      document.getElementById('info-jarak').innerText = `${hs.jarak_permukiman_km} km`;
+
+      const faktorList = JSON.parse(hs.faktor_utama || '[]');
+      const shapEl = document.getElementById('shap-list');
+      shapEl.innerHTML = faktorList.map(f => `
+        <div class="bg-amber-50 border border-amber-200 p-3 rounded-lg">
+          <p class="font-bold text-xs text-slate-800">${f.faktor}</p>
+          <p class="text-xs text-slate-600 mt-0.5">Nilai: <b>${f.nilai_fitur}</b></p>
+          <p class="text-[11px] text-amber-800 font-medium mt-1">${f.dampak}</p>
+        </div>
+      `).join('');
+
+      if (data.reports.length > 0) {
+        document.getElementById('reports-container').innerHTML = data.reports.map(r => `
+          <div class="border rounded-lg p-3 space-y-2 text-slate-800">
+            <img src="${r.foto_url}" class="w-full h-40 object-cover rounded" />
+            <div class="flex justify-between text-xs">
+              <span class="font-bold">${r.kode_laporan}</span>
+              <span class="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-semibold">AI: ${r.label_ai.toUpperCase()} (${Math.round(r.keyakinan_ai*100)}%)</span>
+            </div>
+            <p class="text-xs text-slate-600">${r.catatan || 'Tidak ada catatan tambahan.'}</p>
+          </div>
+        `).join('');
+      }
+
+      if (data.field_checks.length > 0) {
+        document.getElementById('history-checks').innerHTML = '<p class="font-bold text-slate-700">Riwayat Pengecekan:</p>' +
+          data.field_checks.map(c => `<div class="p-2 bg-slate-100 rounded"><b>[${c.hasil}]</b> oleh ${c.petugas} (${c.waktu}) — ${c.catatan}</div>`).join('');
+      }
+    }
+
+    async function submitCheck(e) {
+      e.preventDefault();
+      const payload = {
+        hotspot_id: parseInt(hotspotId),
+        hasil: document.getElementById('check-hasil').value,
+        petugas: document.getElementById('check-petugas').value,
+        catatan: document.getElementById('check-catatan').value
+      };
+      const res = await fetch('/api/field-checks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const out = await res.json();
+      alert(out.message);
+      loadDetail();
+    }
+
+    loadDetail();
+  </script>
+</body>
+</html>

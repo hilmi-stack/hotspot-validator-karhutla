@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hotspot Validator — Pemantauan Prioritas Karhutla</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class'
+    }
+  </script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    #map { height: 520px; z-index: 1; }
+    html.dark .leaflet-tile-pane {
+      filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+    }
+  </style>
+</head>
+<body class="bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans transition-colors duration-200">
+  <script>
+    if (!localStorage.getItem('hv_user_email')) {
+      window.location.href = 'login.html';
+    }
+    function logoutUser() {
+      localStorage.removeItem('hv_user_email');
+      localStorage.removeItem('hv_user_nama');
+      window.location.href = 'login.html';
+    }
+  </script>
+
+  <nav class="bg-slate-900 dark:bg-slate-900/95 border-b border-slate-800 text-white px-6 py-4 flex flex-wrap justify-between items-center shadow-md">
+    <div class="flex items-center space-x-3">
+      <span class="text-2xl">🔥</span>
+      <div>
+        <h1 class="font-bold text-lg tracking-wide">Hotspot Validator</h1>
+        <p class="text-xs text-slate-400">Sistem Verifikasi Titik Panas Karhutla Berbasis AI</p>
+      </div>
+    </div>
+    <div class="flex flex-wrap items-center gap-2 mt-2 sm:mt-0 text-sm">
+      <a href="index.html" class="bg-amber-600 px-3 py-1.5 rounded font-medium">Dasbor Peta</a>
+      <a href="lapor.html" class="bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded">Form Lapor Warga</a>
+      <a href="admin.html" class="bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded">Panel Admin</a>
+      <button onclick="toggleTheme()" id="theme-toggle" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 rounded font-medium transition">
+        🌙 Dark
+      </button>
+      <button onclick="logoutUser()" class="bg-red-700 hover:bg-red-600 px-3 py-1.5 rounded font-medium">Keluar</button>
+    </div>
+  </nav>
+
+  <main class="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div class="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border-l-4 border-red-600 transition-colors">
+        <p class="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold">Kemungkinan Besar Api</p>
+        <p id="count-high" class="text-2xl font-bold text-red-600 dark:text-red-500 mt-1">0</p>
+      </div>
+      <div class="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border-l-4 border-amber-500 transition-colors">
+        <p class="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold">Perlu Dicek</p>
+        <p id="count-med" class="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">0</p>
+      </div>
+      <div class="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border-l-4 border-emerald-600 transition-colors">
+        <p class="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold">Kemungkinan Alarm Palsu</p>
+        <p id="count-low" class="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">0</p>
+      </div>
+      <div class="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm flex flex-col justify-center space-y-2 transition-colors">
+        <button onclick="triggerIngest(true)" class="bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-semibold py-2 px-3 rounded-lg transition">
+          ⚡ Simulasi Tarik Data Satelit
+        </button>
+        <button onclick="triggerIngest(false)" class="bg-blue-700 hover:bg-blue-600 text-white text-xs font-semibold py-2 px-3 rounded-lg transition">
+          🛰️ Tarik Live NASA FIRMS
+        </button>
+      </div>
+    </div>
+
+    <div class="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm flex flex-wrap justify-between items-center gap-3 transition-colors">
+      <div class="flex items-center space-x-2 text-sm">
+        <label class="font-semibold">Filter Level:</label>
+        <select id="filter-level" onchange="loadHotspots()" class="border dark:border-slate-700 rounded-lg px-3 py-1.5 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100">
+          <option value="SEMUA">Semua Level (Termasuk Alarm Palsu)</option>
+          <option value="Kemungkinan besar api">🔴 Kemungkinan Besar Api</option>
+          <option value="Perlu dicek">🟡 Perlu Dicek</option>
+          <option value="Kemungkinan alarm palsu">🟢 Kemungkinan Alarm Palsu</option>
+        </select>
+      </div>
+      <button onclick="exportCSV()" class="text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-2 rounded-lg font-medium">
+        📥 Ekspor Antrean CSV
+      </button>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="lg:col-span-2 bg-white dark:bg-slate-900 p-3 rounded-xl shadow-sm transition-colors">
+        <div id="map" class="rounded-lg"></div>
+      </div>
+
+      <div class="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm flex flex-col h-[544px] transition-colors">
+        <h2 class="font-bold text-base mb-1">📋 Antrean Prioritas Petugas</h2>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Diurutkan berdasarkan skor probabilitas tertinggi & jarak permukiman terdekat.</p>
+        <div id="queue-list" class="overflow-y-auto space-y-3 flex-1 pr-1">
+          <p class="text-sm text-slate-400">Memuat data...</p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const map = L.map('map').setView([-1.8, 113.5], 6);
+
+    L.tileLayer('https://mt1.google.com/vt/lyrs=m&hl=id&x={x}&y={y}&z={z}', {
+      attribution: '&copy; Google Maps (Bahasa Indonesia)'
+    }).addTo(map);
+
+    function applyTheme(isDark) {
+      const btn = document.getElementById('theme-toggle');
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+        if (btn) btn.innerText = '☀️ Light';
+      } else {
+        document.documentElement.classList.remove('dark');
+        if (btn) btn.innerText = '🌙 Dark';
+      }
+    }
+
+    function toggleTheme() {
+      const isDark = !document.documentElement.classList.contains('dark');
+      localStorage.setItem('hv_theme', isDark ? 'dark' : 'light');
+      applyTheme(isDark);
+    }
+
+    applyTheme(localStorage.getItem('hv_theme') === 'dark');
+
+    let markersLayer = L.layerGroup().addTo(map);
+    let currentData = [];
+
+    function getLevelStyle(level) {
+      if (level === 'Kemungkinan besar api') {
+        return {
+          color: '#dc2626',
+          badge: 'bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-300 border-red-300 dark:border-red-800',
+          icon: '🔴'
+        };
+      } else if (level === 'Perlu dicek') {
+        return {
+          color: '#d97706',
+          badge: 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800',
+          icon: '🟡'
+        };
+      }
+      return {
+        color: '#059669',
+        badge: 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800',
+        icon: '🟢'
+      };
+    }
+
+    async function loadHotspots() {
+      const level = document.getElementById('filter-level').value;
+      const res = await fetch(`/api/hotspots?level=${encodeURIComponent(level)}`);
+      currentData = await res.json();
+
+      const allRes = await fetch('/api/hotspots');
+      const allData = await allRes.json();
+      document.getElementById('count-high').innerText = allData.filter(d => d.level === 'Kemungkinan besar api').length;
+      document.getElementById('count-med').innerText = allData.filter(d => d.level === 'Perlu dicek').length;
+      document.getElementById('count-low').innerText = allData.filter(d => d.level === 'Kemungkinan alarm palsu').length;
+
+      markersLayer.clearLayers();
+      const queueEl = document.getElementById('queue-list');
+      queueEl.innerHTML = '';
+
+      if (currentData.length === 0) {
+        queueEl.innerHTML = '<p class="text-sm text-slate-400">Tidak ada titik pada filter ini.</p>';
+        return;
+      }
+
+      currentData.forEach((pt, idx) => {
+        const st = getLevelStyle(pt.level);
+        const marker = L.circleMarker([pt.lat, pt.lon], {
+          radius: 9, fillColor: st.color, color: '#fff', weight: 2, opacity: 1, fillOpacity: 0.9
+        });
+        marker.bindPopup(`
+          <div class="text-xs space-y-1 text-slate-800">
+            <p class="font-bold">${st.icon} ${pt.wilayah}</p>
+            <p>Skor AI: <b>${pt.skor_akhir}/100</b></p>
+            <p>Lahan: ${pt.jenis_lahan} | FRP: ${pt.frp} MW</p>
+            <a href="detail.html?id=${pt.id}" class="inline-block mt-1 text-blue-600 underline font-semibold">Buka Detail & Verifikasi &rarr;</a>
+          </div>
+        `);
+        markersLayer.addLayer(marker);
+
+        queueEl.innerHTML += `
+          <div class="border dark:border-slate-800 rounded-lg p-3 hover:bg-slate-50 dark:hover:bg-slate-800/70 transition">
+            <div class="flex justify-between items-start">
+              <span class="text-xs font-bold px-2 py-0.5 rounded border ${st.badge}">${st.icon} ${pt.level}</span>
+              <span class="text-sm font-extrabold text-slate-900 dark:text-white">${pt.skor_akhir}<span class="text-xs font-normal text-slate-500 dark:text-slate-400">/100</span></span>
+            </div>
+            <p class="font-semibold text-sm mt-1.5">#${idx + 1} ${pt.wilayah}</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Lahan: ${pt.jenis_lahan} • Permukiman: ${pt.jarak_permukiman_km} km</p>
+            <div class="mt-2 flex justify-between items-center">
+              <span class="text-[11px] text-slate-400">${pt.waktu_akuisisi}</span>
+              <a href="detail.html?id=${pt.id}" class="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline">Detail & Cek &rarr;</a>
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    async function triggerIngest(simulasi) {
+      const res = await fetch(`/api/ingest/trigger?simulasi=${simulasi}`, { method: 'POST' });
+      const data = await res.json();
+      alert(`Selesai! ${data.titik_baru} titik panas baru diproses AI.`);
+      loadHotspots();
+    }
+
+    function exportCSV() {
+      const headers = ['ID,Wilayah,Lat,Lon,Skor,Level,Jenis_Lahan,Jarak_Permukiman_km,Waktu'];
+      const rows = currentData.map(d => `${d.id},"${d.wilayah}",${d.lat},${d.lon},${d.skor_akhir},"${d.level}",${d.jenis_lahan},${d.jarak_permukiman_km},"${d.waktu_akuisisi}"`);
+      const blob = new Blob([headers.concat(rows).join('\n')], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'antrean_prioritas_hotspot.csv';
+      a.click();
+    }
+
+    loadHotspots();
+    setInterval(() => { loadHotspots(); }, 15000);
+  </script>
+</body>
+</html>

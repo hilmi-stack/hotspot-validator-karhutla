@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lapor Asap / Karhutla — Hotspot Validator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans">
+  <nav class="bg-slate-900 text-white px-6 py-4 flex justify-between items-center shadow-md">
+    <div class="flex items-center space-x-2">
+      <span class="text-xl">📸</span>
+      <h1 class="font-bold text-base">Lapor Warga Karhutla</h1>
+    </div>
+    <a href="index.html" class="bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded text-xs">Dasbor Peta</a>
+  </nav>
+
+  <main class="max-w-lg mx-auto p-4 sm:p-6">
+    <div class="bg-white p-6 rounded-2xl shadow-sm space-y-5">
+      <div>
+        <h2 class="text-xl font-bold">Kirim Foto Bukti Api / Asap</h2>
+        <p class="text-xs text-slate-500 mt-1">Foto Anda akan divalidasi otomatis oleh AI untuk mempercepat prioritas penanganan petugas.</p>
+      </div>
+
+      <form id="form-lapor" onsubmit="kirimLaporan(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold mb-1">1. Ambil / Unggah Foto Kejadian (Maks 5 MB) *</label>
+          <input type="file" id="foto" accept="image/*" capture="environment" required class="w-full border rounded-lg p-2 text-sm bg-slate-50" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold mb-1">2. Lokasi Kejadian (Koordinat GPS) *</label>
+          <div class="grid grid-cols-2 gap-2">
+            <input type="number" step="any" id="lat" placeholder="Latitude (mis. -2.21)" required class="border rounded-lg p-2 text-sm" />
+            <input type="number" step="any" id="lon" placeholder="Longitude (mis. 113.91)" required class="border rounded-lg p-2 text-sm" />
+          </div>
+          <div class="flex space-x-2 mt-2">
+            <button type="button" onclick="ambilGPS()" class="text-xs bg-blue-100 text-blue-800 font-semibold px-3 py-1.5 rounded-lg">
+              📍 Ambil GPS Otomatis
+            </button>
+            <button type="button" onclick="isiKoordinatDekatHotspot()" class="text-xs bg-amber-100 text-amber-800 font-semibold px-3 py-1.5 rounded-lg">
+              🎯 Simulasi Dekat Titik Aktif
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold mb-1">3. Catatan Kondisi (Opsional)</label>
+          <textarea id="catatan" rows="2" placeholder="Misal: Asap tebal terlihat di belakang kebun sawit arah utara..." class="w-full border rounded-lg p-2 text-sm"></textarea>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold mb-1">4. Nomor WA / Kontak (Opsional, dijaga kerahasiaannya)</label>
+          <input type="text" id="kontak" placeholder="0812xxxx" class="w-full border rounded-lg p-2 text-sm" />
+        </div>
+
+        <button type="submit" id="btn-submit" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl text-sm shadow transition">
+          🚀 Kirim Laporan Sekarang
+        </button>
+      </form>
+
+      <!-- Hasil Validasi AI (US-06) -->
+      <div id="result-box" class="hidden p-4 rounded-xl border text-sm space-y-1"></div>
+    </div>
+  </main>
+
+  <script>
+    function ambilGPS() {
+      if (!navigator.geolocation) {
+        alert("Browser tidak mendukung GPS.");
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(pos => {
+        document.getElementById('lat').value = pos.coords.latitude.toFixed(5);
+        document.getElementById('lon').value = pos.coords.longitude.toFixed(5);
+      }, () => alert("Gagal mengambil GPS, silakan isi manual atau gunakan tombol simulasi."));
+    }
+
+    async function isiKoordinatDekatHotspot() {
+      const res = await fetch('/api/hotspots');
+      const data = await res.json();
+      if (data.length > 0) {
+        document.getElementById('lat').value = data[0].lat;
+        document.getElementById('lon').value = data[0].lon;
+      }
+    }
+
+    async function kirimLaporan(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btn-submit');
+      btn.disabled = true;
+      btn.innerText = "⏳ Memvalidasi Foto dengan AI...";
+
+      const formData = new FormData();
+      formData.append('foto', document.getElementById('foto').files[0]);
+      formData.append('lat', document.getElementById('lat').value);
+      formData.append('lon', document.getElementById('lon').value);
+      formData.append('catatan', document.getElementById('catatan').value);
+      formData.append('kontak', document.getElementById('kontak').value);
+
+      const res = await fetch('/api/reports', { method: 'POST', body: formData });
+      const data = await res.json();
+
+      const box = document.getElementById('result-box');
+      box.classList.remove('hidden');
+      if (data.valid) {
+        box.className = "p-4 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-900 text-sm space-y-1";
+        box.innerHTML = `
+          <p class="font-bold text-base">✅ Laporan Diterima! Nomor Tiket: ${data.kode_laporan}</p>
+          <p>Hasil AI Vision: <b>${data.label_ai.toUpperCase()}</b> (Keyakinan: ${Math.round(data.keyakinan_ai*100)}%)</p>
+          <p class="text-xs">Skor prioritas titik panas terdekat telah dinaikkan secara otomatis.</p>
+          <a href="detail.html?id=${data.hotspot_id}" class="inline-block mt-2 underline font-bold text-emerald-800">Lihat Titik di Dasbor &rarr;</a>
+        `;
+      } else {
+        box.className = "p-4 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 text-sm space-y-1";
+        box.innerHTML = `
+          <p class="font-bold">⚠️ Laporan Tercatat (${data.kode_laporan}) Namun Tidak Menaikkan Skor</p>
+          <p class="text-xs">Alasan: <b>${data.alasan_tidak_valid}</b> (Label AI: ${data.label_ai})</p>
+        `;
+      }
+      btn.disabled = false;
+      btn.innerText = "🚀 Kirim Laporan Sekarang";
+    }
+  </script>
+</body>
+</html>

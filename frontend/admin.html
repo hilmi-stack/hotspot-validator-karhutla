@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Panel Admin — Hotspot Validator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans">
+  <script>
+    if (!localStorage.getItem('hv_user_email')) {
+      window.location.href = 'login.html';
+    }
+    function logoutUser() {
+      localStorage.removeItem('hv_user_email');
+      localStorage.removeItem('hv_user_nama');
+      window.location.href = 'login.html';
+    }
+  </script>
+
+  <nav class="bg-slate-900 text-white px-6 py-4 flex flex-wrap justify-between items-center shadow-md">
+    <div class="flex items-center space-x-3">
+      <span class="text-2xl">⚙️</span>
+      <div>
+        <h1 class="font-bold text-lg tracking-wide">Panel Admin & Pengaturan AI</h1>
+        <p class="text-xs text-slate-400">Konfigurasi Ambang Skor, Notifikasi Telegram & Retraining Model</p>
+      </div>
+    </div>
+    <div class="flex space-x-3 mt-2 sm:mt-0 text-sm">
+      <a href="index.html" class="bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded">Dasbor Peta</a>
+      <a href="lapor.html" class="bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded">Form Lapor Warga</a>
+      <a href="admin.html" class="bg-amber-600 px-3 py-1.5 rounded font-medium">Panel Admin</a>
+      <button onclick="logoutUser()" class="bg-red-700 hover:bg-red-600 px-3 py-1.5 rounded font-medium">Keluar</button>
+    </div>
+  </nav>
+
+  <main class="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="bg-white p-6 rounded-xl shadow-sm space-y-4">
+        <h2 class="font-bold text-base border-b pb-2">🎛️ Pengaturan Ambang Klasifikasi & Validasi</h2>
+        <form onsubmit="saveSettings(event)" class="space-y-3 text-sm">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Ambang Kemungkinan Besar Api</label>
+              <input type="number" step="0.1" id="ambang_tinggi" value="70" required class="w-full border rounded-lg p-2" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Ambang Perlu Dicek</label>
+              <input type="number" step="0.1" id="ambang_sedang" value="40" required class="w-full border rounded-lg p-2" />
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Radius Cocok Laporan (km)</label>
+              <input type="number" step="0.5" id="radius_validasi_km" value="10" required class="w-full border rounded-lg p-2" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Poin Boost Laporan Warga</label>
+              <input type="number" step="1" id="nilai_boost" value="15" required class="w-full border rounded-lg p-2" />
+            </div>
+          </div>
+          <button type="submit" class="bg-slate-900 hover:bg-slate-800 text-white font-semibold px-4 py-2 rounded-lg text-xs">
+            💾 Simpan Pengaturan
+          </button>
+        </form>
+
+        <div class="pt-4 border-t flex items-center justify-between">
+          <div>
+            <p class="text-xs text-slate-500">Versi Model XGBoost Aktif (<span id="total-checks">0</span> cek lapangan):</p>
+            <p id="versi-model" class="font-bold text-sm text-emerald-700">xgb_hotspot_v1</p>
+          </div>
+          <button onclick="triggerRetrain()" class="bg-blue-700 hover:bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg text-xs">
+            🔄 Picu Retraining Model Sekarang
+          </button>
+        </div>
+      </div>
+
+      <div class="bg-white p-6 rounded-xl shadow-sm space-y-4">
+        <h2 class="font-bold text-base border-b pb-2">📲 Penerima Peringatan Telegram</h2>
+        <form onsubmit="addSubscriber(event)" class="space-y-3 text-sm">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <input type="text" id="sub_nama" placeholder="Nama / Instansi" required class="border rounded-lg p-2 text-xs" />
+            <input type="text" id="sub_chat_id" placeholder="Telegram Chat ID" required class="border rounded-lg p-2 text-xs" />
+            <input type="text" id="sub_wilayah" placeholder="Wilayah (atau SEMUA)" value="SEMUA" required class="border rounded-lg p-2 text-xs" />
+          </div>
+          <button type="submit" class="bg-emerald-700 hover:bg-emerald-600 text-white font-semibold px-4 py-2 rounded-lg text-xs">
+            ➕ Daftarkan Penerima Alert
+          </button>
+        </form>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs text-left border-collapse">
+            <thead>
+              <tr class="bg-slate-100 border-b">
+                <th class="p-2">Nama</th>
+                <th class="p-2">Chat ID</th>
+                <th class="p-2">Wilayah</th>
+              </tr>
+            </thead>
+            <tbody id="sub-list">
+              <tr><td colspan="3" class="p-2 text-slate-400">Memuat daftar penerima...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white p-6 rounded-xl shadow-sm space-y-3">
+      <div class="flex justify-between items-center">
+        <h2 class="font-bold text-base">📜 Log Eksekusi Pipeline & Retraining</h2>
+        <button onclick="loadAdminData()" class="text-xs text-blue-600 hover:underline">↻ Muat Ulang Log</button>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-100 border-b">
+              <th class="p-2">Waktu</th>
+              <th class="p-2">Nama Job</th>
+              <th class="p-2">Status</th>
+              <th class="p-2">Jumlah Data</th>
+              <th class="p-2">Keterangan</th>
+            </tr>
+          </thead>
+          <tbody id="log-list">
+            <tr><td colspan="5" class="p-2 text-slate-400">Memuat log sistem...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    async function loadAdminData() {
+      const res = await fetch('/api/admin/overview');
+      if (!res.ok) return;
+      const data = await res.json();
+
+      document.getElementById('ambang_tinggi').value = data.setting.ambang_tinggi;
+      document.getElementById('ambang_sedang').value = data.setting.ambang_sedang;
+      document.getElementById('radius_validasi_km').value = data.setting.radius_validasi_km;
+      document.getElementById('nilai_boost').value = data.setting.nilai_boost;
+      document.getElementById('versi-model').innerText = data.setting.versi_model_aktif;
+      document.getElementById('total-checks').innerText = data.total_field_checks;
+
+      const subEl = document.getElementById('sub-list');
+      subEl.innerHTML = data.subscriptions.length === 0
+        ? '<tr><td colspan="3" class="p-2 text-slate-400">Belum ada penerima terdaftar.</td></tr>'
+        : data.subscriptions.map(s => `<tr class="border-b"><td class="p-2 font-medium">${s.nama}</td><td class="p-2">${s.chat_id}</td><td class="p-2">${s.wilayah}</td></tr>`).join('');
+
+      const logEl = document.getElementById('log-list');
+      logEl.innerHTML = data.logs.length === 0
+        ? '<tr><td colspan="5" class="p-2 text-slate-400">Belum ada riwayat eksekusi.</td></tr>'
+        : data.logs.map(l => `
+            <tr class="border-b">
+              <td class="p-2 text-slate-500">${l.waktu}</td>
+              <td class="p-2 font-semibold">${l.nama_job}</td>
+              <td class="p-2"><span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">${l.status}</span></td>
+              <td class="p-2">${l.jumlah_data}</td>
+              <td class="p-2 text-slate-600">${l.pesan}</td>
+            </tr>
+          `).join('');
+    }
+
+    async function saveSettings(e) {
+      e.preventDefault();
+      const res = await fetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ambang_tinggi: parseFloat(document.getElementById('ambang_tinggi').value),
+          ambang_sedang: parseFloat(document.getElementById('ambang_sedang').value),
+          radius_validasi_km: parseFloat(document.getElementById('radius_validasi_km').value),
+          nilai_boost: parseFloat(document.getElementById('nilai_boost').value)
+        })
+      });
+      if (res.ok) alert('Pengaturan berhasil disimpan!');
+    }
+
+    async function addSubscriber(e) {
+      e.preventDefault();
+      const formData = new FormData();
+      formData.append('nama', document.getElementById('sub_nama').value);
+      formData.append('chat_id', document.getElementById('sub_chat_id').value);
+      formData.append('wilayah', document.getElementById('sub_wilayah').value);
+
+      const res = await fetch('/api/telegram/subscribe', {
+        method: 'POST',
+        body: formData
+      });
+      if (res.ok) {
+        document.getElementById('sub_nama').value = '';
+        document.getElementById('sub_chat_id').value = '';
+        loadAdminData();
+      }
+    }
+
+    async function triggerRetrain() {
+      const res = await fetch('/api/admin/retrain', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        alert(`Retraining selesai! Versi aktif sekarang: ${data.versi_baru}`);
+        loadAdminData();
+      }
+    }
+
+    loadAdminData();
+  </script>
+</body>
+</html>
