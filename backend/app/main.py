@@ -1,11 +1,12 @@
 import os
+import time
 import uuid
 import json
 import random
 from datetime import datetime
 from typing import Optional
 import requests
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -14,6 +15,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 
 from .database import init_db, get_connection
+from .security import verify_password, create_token, read_token
 from .services.ai_pipeline import (
     fetch_firms_or_simulate, fetch_weather_openmeteo, predict_hotspot_score,
     classify_level, analyze_citizen_photo, haversine_km
@@ -23,7 +25,7 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 os.makedirs("backend/uploads", exist_ok=True)
 
-app = FastAPI(title="Hotspot Validator API", version="1.0")
+app = FastAPI(title="AgniVision API", version="1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -34,32 +36,60 @@ app.add_middleware(
 
 app.mount("/uploads", StaticFiles(directory="backend/uploads"), name="uploads")
 
+
+def get_current_user(authorization: Optional[str] = Header(None)):
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Silakan login terlebih dahulu")
+    data = read_token(authorization[7:].strip())
+    if not data:
+        raise HTTPException(status_code=401, detail="Sesi tidak valid atau sudah berakhir, silakan login ulang")
+    return data
+
+
+def require_admin(user: dict = Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Hanya admin yang boleh mengakses ini")
+    return user
+
+def _md(teks) -> str:
+    """Amankan karakter khusus Markdown Telegram."""
+    teks = str(teks)
+    for ch in ("_", "*", "`", "["):
+        teks = teks.replace(ch, "\\" + ch)
+    return teks
+
+
 def send_telegram_alert(hotspot_dict: dict, conn):
     if not TELEGRAM_BOT_TOKEN or "masukkan_" in TELEGRAM_BOT_TOKEN:
         return
     subs = conn.execute("SELECT chat_id FROM subscriptions WHERE aktif = 1").fetchall()
     if not subs:
+        print("[TELEGRAM] Tidak ada pelanggan aktif")
         return
     faktor_list = json.loads(hotspot_dict["faktor_utama"])
-    faktor_str = "\n".join([f"• {f['faktor']}: {f['dampak']}" for f in faktor_list])
+    faktor_str = "\n".join([f"• {_md(f['faktor'])}: {_md(f['dampak'])}" for f in faktor_list])
     pesan = (
         f"🚨 *PERINGATAN KARHUTLA TINGGI*\n"
-        f"📍 Wilayah: *{hotspot_dict['wilayah']}*\n"
-        f"🎯 Skor AI: *{hotspot_dict['skor_akhir']}/100* ({hotspot_dict['level']})\n"
-        f"🛰️ Satelit: {hotspot_dict['satelit']} | FRP: {hotspot_dict['frp']} MW\n"
+        f"📍 Wilayah: *{_md(hotspot_dict['wilayah'])}*\n"
+        f"🎯 Skor AI: *{hotspot_dict['skor_akhir']}/100* ({_md(hotspot_dict['level'])})\n"
+        f"🛰️ Satelit: {_md(hotspot_dict['satelit'])} | FRP: {hotspot_dict['frp']} MW\n"
         f"📌 Koordinat: `{hotspot_dict['lat']}, {hotspot_dict['lon']}`\n"
         f"🗺️ Maps: https://maps.google.com/?q={hotspot_dict['lat']},{hotspot_dict['lon']}\n\n"
         f"*Faktor Utama:*\n{faktor_str}"
     )
     for s in subs:
         try:
-            requests.post(
+            res = requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                 json={"chat_id": s["chat_id"], "text": pesan, "parse_mode": "Markdown"},
-                timeout=5
+                timeout=8,
             )
-        except Exception:
-            pass
+            if res.status_code == 200:
+                print(f"[TELEGRAM] Terkirim ke {s['chat_id']}")
+            else:
+                print(f"[TELEGRAM] Gagal ({res.status_code}): {res.text[:200]}")
+        except Exception as e:
+            print(f"[TELEGRAM] Error kirim: {type(e).__name__}")
 
 def run_ingestion_pipeline(use_simulation: bool = False):
     conn = get_connection()
@@ -148,7 +178,7 @@ def startup_event():
     scheduler.add_job(run_ingestion_pipeline, "interval", minutes=10, kwargs={"use_simulation": False})
     scheduler.start()
 
-@app.get("/api/hotspots")
+@app.get("/api/hotspots", dependencies=[Depends(get_current_user)])
 def get_hotspots(level: Optional[str] = None):
     conn = get_connection()
     if level and level != "SEMUA":
@@ -163,7 +193,7 @@ def get_hotspots(level: Optional[str] = None):
     conn.close()
     return [dict(r) for r in rows]
 
-@app.get("/api/hotspots/{hotspot_id}")
+@app.get("/api/hotspots/{hotspot_id}", dependencies=[Depends(get_current_user)])
 def get_hotspot_detail(hotspot_id: int):
     conn = get_connection()
     hs = conn.execute("SELECT * FROM hotspots WHERE id = ?", (hotspot_id,)).fetchone()
@@ -179,7 +209,7 @@ def get_hotspot_detail(hotspot_id: int):
         "field_checks": [dict(c) for c in checks]
     }
 
-@app.post("/api/ingest/trigger")
+@app.post("/api/ingest/trigger", dependencies=[Depends(get_current_user)])
 def trigger_ingest(simulasi: bool = True):
     added = run_ingestion_pipeline(use_simulation=simulasi)
     return {"status": "ok", "titik_baru": added}
@@ -280,7 +310,7 @@ class FieldCheckIn(BaseModel):
     catatan: str = ""
     petugas: str = "Petugas BPBD/Manggala Agni"
 
-@app.post("/api/field-checks")
+@app.post("/api/field-checks", dependencies=[Depends(get_current_user)])
 def submit_field_check(payload: FieldCheckIn):
     conn = get_connection()
     hs = conn.execute("SELECT id FROM hotspots WHERE id = ?", (payload.hotspot_id,)).fetchone()
@@ -299,7 +329,7 @@ def submit_field_check(payload: FieldCheckIn):
     conn.close()
     return {"status": "ok", "message": "Hasil cek lapangan tersimpan ke dataset latih"}
 
-@app.get("/api/admin/overview")
+@app.get("/api/admin/overview", dependencies=[Depends(require_admin)])
 def admin_overview():
     conn = get_connection()
     setting = dict(conn.execute("SELECT * FROM settings LIMIT 1").fetchone())
@@ -315,7 +345,7 @@ class SettingUpdate(BaseModel):
     radius_validasi_km: float
     nilai_boost: float
 
-@app.put("/api/admin/settings")
+@app.put("/api/admin/settings", dependencies=[Depends(require_admin)])
 def update_settings(payload: SettingUpdate):
     conn = get_connection()
     conn.execute(
@@ -329,7 +359,7 @@ def update_settings(payload: SettingUpdate):
     conn.close()
     return {"status": "ok"}
 
-@app.post("/api/admin/retrain")
+@app.post("/api/admin/retrain", dependencies=[Depends(require_admin)])
 def trigger_retrain():
     conn = get_connection()
     setting = dict(conn.execute("SELECT * FROM settings LIMIT 1").fetchone())
@@ -345,7 +375,7 @@ def trigger_retrain():
     conn.close()
     return {"status": "ok", "versi_baru": new_ver}
 
-@app.post("/api/telegram/subscribe")
+@app.post("/api/telegram/subscribe", dependencies=[Depends(get_current_user)])
 def add_telegram_sub(chat_id: str = Form(...), nama: str = Form("Petugas"), wilayah: str = Form("SEMUA")):
     conn = get_connection()
     existing = conn.execute("SELECT id FROM subscriptions WHERE chat_id = ?", (chat_id,)).fetchone()
@@ -363,24 +393,33 @@ def serve_home():
 
 class LoginRequest(BaseModel):
     email: str
-    nama: str = "Pengguna"
+    password: str
+
+_gagal_login = {}
 
 @app.post("/api/login")
 def login_email(payload: LoginRequest):
     email_clean = payload.email.strip().lower()
-    if "@" not in email_clean or "." not in email_clean:
-        raise HTTPException(status_code=400, detail="Format email tidak valid")
-    
+    sekarang = time.time()
+    percobaan = [t for t in _gagal_login.get(email_clean, []) if sekarang - t < 300]
+    if len(percobaan) >= 5:
+        raise HTTPException(status_code=429, detail="Terlalu banyak percobaan gagal. Coba lagi dalam 5 menit.")
+
     conn = get_connection()
     user = conn.execute("SELECT * FROM users WHERE email = ?", (email_clean,)).fetchone()
-    if not user:
-        conn.execute(
-            "INSERT INTO users (email, nama, role) VALUES (?, ?, 'petugas')",
-            (email_clean, payload.nama)
-        )
-        conn.commit()
-        user = conn.execute("SELECT * FROM users WHERE email = ?", (email_clean,)).fetchone()
     conn.close()
-    return {"status": "ok", "user": dict(user)}
+
+    if not user or not user["password_hash"] or not verify_password(payload.password, user["password_hash"]):
+        percobaan.append(sekarang)
+        _gagal_login[email_clean] = percobaan
+        raise HTTPException(status_code=401, detail="Email atau password salah")
+
+    _gagal_login.pop(email_clean, None)
+    token = create_token(user["email"], user["role"], user["nama"])
+    return {
+        "status": "ok",
+        "token": token,
+        "user": {"email": user["email"], "nama": user["nama"], "role": user["role"]},
+    }
 
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")

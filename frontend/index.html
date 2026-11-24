@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Hotspot Validator — Pemantauan Prioritas Karhutla</title>
+  <title>AgniVision — Pemantauan Prioritas Karhutla</title>
+  <script src="auth.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -21,12 +22,11 @@
 </head>
 <body class="bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans transition-colors duration-200">
   <script>
-    if (!localStorage.getItem('hv_user_email')) {
-      window.location.href = 'login.html';
-    }
     function logoutUser() {
       localStorage.removeItem('hv_user_email');
       localStorage.removeItem('hv_user_nama');
+      localStorage.removeItem('hv_token');
+      localStorage.removeItem('hv_user_role');
       window.location.href = 'login.html';
     }
   </script>
@@ -35,7 +35,7 @@
     <div class="flex items-center space-x-3">
       <span class="text-2xl">🔥</span>
       <div>
-        <h1 class="font-bold text-lg tracking-wide">Hotspot Validator</h1>
+        <h1 class="font-bold text-lg tracking-wide">AgniVision</h1>
         <p class="text-xs text-slate-400">Sistem Verifikasi Titik Panas Karhutla Berbasis AI</p>
       </div>
     </div>
@@ -213,15 +213,23 @@
       loadHotspots();
     }
 
-    function exportCSV() {
-      const headers = ['ID,Wilayah,Lat,Lon,Skor,Level,Jenis_Lahan,Jarak_Permukiman_km,Waktu'];
-      const rows = currentData.map(d => `${d.id},"${d.wilayah}",${d.lat},${d.lon},${d.skor_akhir},"${d.level}",${d.jenis_lahan},${d.jarak_permukiman_km},"${d.waktu_akuisisi}"`);
-      const blob = new Blob([headers.concat(rows).join('\n')], { type: 'text/csv' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'antrean_prioritas_hotspot.csv';
-      a.click();
-    }
+   function exportCSV() {
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const header = 'ID,Wilayah,Lat,Lon,Skor,Level,Jenis_Lahan,Jarak_Permukiman_km,Waktu';
+    const rows = currentData.map(d => [
+    d.id, esc(d.wilayah), d.lat, d.lon, d.skor_akhir,
+    esc(d.level), esc(d.jenis_lahan), d.jarak_permukiman_km, esc(d.waktu_akuisisi)
+  ].join(','));
+
+  const isi = '\uFEFF' + 'sep=,\n' + [header, ...rows].join('\r\n');
+
+  const blob = new Blob([isi], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'antrean_prioritas_hotspot.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
 
     loadHotspots();
     setInterval(() => { loadHotspots(); }, 15000);

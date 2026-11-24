@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Masuk — Hotspot Validator</title>
+  <title>Masuk — AgniVision</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-900 text-slate-800 font-sans min-h-screen flex items-center justify-center p-4">
   <div class="bg-white max-w-md w-full p-8 rounded-2xl shadow-xl space-y-6">
     <div class="text-center space-y-1">
       <span class="text-4xl">🔥</span>
-      <h1 class="text-2xl font-bold text-slate-900">Hotspot Validator</h1>
-      <p class="text-xs text-slate-500">Masukkan email Anda untuk mengakses sistem pemantauan Karhutla.</p>
+      <h1 class="text-2xl font-bold text-slate-900">AgniVision</h1>
+      <p class="text-xs text-slate-500">Masuk dengan akun yang terdaftar untuk mengakses sistem pemantauan Karhutla.</p>
     </div>
 
     <form onsubmit="handleLogin(event)" class="space-y-4">
@@ -21,10 +21,11 @@
           class="w-full border border-slate-300 rounded-xl p-3 text-sm focus:outline-none focus:border-amber-600" />
       </div>
       <div>
-        <label class="block text-xs font-bold text-slate-700 mb-1">Nama / Instansi (Opsional)</label>
-        <input type="text" id="nama" placeholder="Misal: Hilmi — Tim Karhutla"
+        <label class="block text-xs font-bold text-slate-700 mb-1">Password *</label>
+        <input type="password" id="password" required autocomplete="current-password"
           class="w-full border border-slate-300 rounded-xl p-3 text-sm focus:outline-none focus:border-amber-600" />
       </div>
+      <p id="pesan-error" class="text-xs text-red-600 hidden"></p>
       <button type="submit" id="btn-login"
         class="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 rounded-xl text-sm shadow transition">
         Masuk ke Dasbor &rarr;
@@ -32,41 +33,49 @@
     </form>
 
     <div class="bg-slate-50 p-3 rounded-lg border text-[11px] text-slate-500 text-center">
-      Akun demo cepat: <b>admin@karhutla.id</b> atau email aktif Anda.
+      Belum punya akun? Hubungi admin sistem.
     </div>
   </div>
 
   <script>
-    if (localStorage.getItem('hv_user_email')) {
+    if (localStorage.getItem('hv_token')) {
       window.location.href = 'index.html';
     }
 
     async function handleLogin(e) {
       e.preventDefault();
       const btn = document.getElementById('btn-login');
+      const pesan = document.getElementById('pesan-error');
+      pesan.classList.add('hidden');
       btn.disabled = true;
       btn.innerText = 'Memverifikasi...';
 
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: document.getElementById('email').value,
-          nama: document.getElementById('nama').value || 'Petugas Lapangan'
-        })
-      });
-
-      if (res.ok) {
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: document.getElementById('email').value,
+            password: document.getElementById('password').value
+          })
+        });
         const data = await res.json();
-        localStorage.setItem('hv_user_email', data.user.email);
-        localStorage.setItem('hv_user_nama', data.user.nama);
-        window.location.href = 'index.html';
-      } else {
-        const err = await res.json();
-        alert(err.detail || 'Gagal masuk, periksa format email Anda.');
-        btn.disabled = false;
-        btn.innerText = 'Masuk ke Dasbor →';
+
+        if (res.ok) {
+          localStorage.setItem('hv_token', data.token);
+          localStorage.setItem('hv_user_email', data.user.email);
+          localStorage.setItem('hv_user_nama', data.user.nama);
+          localStorage.setItem('hv_user_role', data.user.role);
+          window.location.href = 'index.html';
+          return;
+        }
+        pesan.innerText = typeof data.detail === 'string' ? data.detail : 'Gagal masuk, periksa email dan password Anda.';
+      } catch (err) {
+        pesan.innerText = 'Tidak bisa terhubung ke server.';
       }
+      pesan.classList.remove('hidden');
+      btn.disabled = false;
+      btn.innerText = 'Masuk ke Dasbor →';
     }
   </script>
 </body>

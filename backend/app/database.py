@@ -111,9 +111,15 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT UNIQUE NOT NULL,
         nama TEXT DEFAULT 'Petugas',
-        role TEXT DEFAULT 'petugas'
+        role TEXT DEFAULT 'petugas',
+        password_hash TEXT DEFAULT ''
     )
     """)
+
+    # Migrasi: database lama belum punya kolom password_hash, jadi ditambahkan di sini
+    kolom_users = [r[1] for r in cur.execute("PRAGMA table_info(users)").fetchall()]
+    if "password_hash" not in kolom_users:
+        cur.execute("ALTER TABLE users ADD COLUMN password_hash TEXT DEFAULT ''")
 
     cur.execute("SELECT COUNT(*) FROM settings")
     if cur.fetchone()[0] == 0:
